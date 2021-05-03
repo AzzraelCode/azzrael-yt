@@ -1,0 +1,5 @@
+/tokens/*
+/venv/
+/data/*
+/private/
+/.idea/
