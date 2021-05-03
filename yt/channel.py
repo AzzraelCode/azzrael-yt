@@ -1,7 +1,9 @@
-import datetime
-from datetime import *
+from random import randrange
+from time import sleep
 
-from yt import helpers
+from googleapiclient.http import MediaFileUpload
+
+from yt.helpers import *
 from yt.creds import *
 
 '''
@@ -24,7 +26,7 @@ def get_channel_info(channel_id = 'UCf6kozNejHoQuFhBDB8cfxA'):
         part='snippet,statistics'
     ).execute()
 
-    created = helpers.parse_date(r['items'][0]['snippet']['publishedAt'])
+    created = parse_date(r['items'][0]['snippet']['publishedAt'])
     today = datetime.now(created.tzinfo)
 
     return {
@@ -71,7 +73,7 @@ def channel_top50(channel_id = 'UCf6kozNejHoQuFhBDB8cfxA'):
     for v in video_items:
 
         # days since publicate
-        pub_time = helpers.parse_date(v['snippet']['publishedAt'])
+        pub_time = parse_date(v['snippet']['publishedAt'])
         today =  datetime.now(pub_time.tzinfo)
 
         t = {
@@ -112,6 +114,57 @@ def get_video_stats(ids):
 '''
 Upload videos to Channel via YouTube API
 https://developers.google.com/youtube/v3/docs/videos/insert
+https://developers.google.com/youtube/v3/guides/uploading_a_video
+https://github.com/youtube/api-samples/blob/master/python/upload_video.py
 '''
-def video_upload():
+def video_upload(video_path, title, **kwargs):
     print("** upload video")
+
+    # chunksize размер блока в БАЙТАХ (int), чем хуже соединение, тем мельче блок
+    # напр. для мобильного трафа норм 1024*1024*3 = 3М
+    # -1 => видос будет грузиться целиком, быстрее на норм сети и при обрыве все равно будет докачка
+    media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
+
+    meta = {
+        'snippet': {
+            'title' : title,
+            'description' : kwargs.get("description", "empty desc")
+        },
+        # All videos uploaded via the videos.insert endpoint from unverified API projects created after 28 July 2020
+        # will be restricted to private viewing mode. To lift this restriction,
+        # each API project must undergo an audit to verify compliance
+        # --- т.е. для прилки в статусе теста тут всегда приват, иначе видос будет заблокирован
+        'status':{
+            'privacyStatus':kwargs.get("privacy", "private")
+        }
+    }
+
+    insert_request = get_service_creds("youtube", "v3").videos().insert(
+        part=','.join(meta.keys()),
+        body=meta,
+        media_body=media
+    )
+
+    r = resumable_upload(insert_request)
+
+    print(r)
+
+'''
+Resumable Upload by chunks
+возмобновляемая загрузка файла, см.
+https://github.com/youtube/api-samples/blob/master/python/upload_video.py
+но здесь я сильно упростил
+'''
+def resumable_upload(request, retries = 5):
+    while retries > 0:
+        try:
+            status, response = request.next_chunk()
+            if response is None: raise Exception("empty response")
+            if 'id' in response: return response # success
+        except Exception as e:
+            print(e)
+
+        retries -= 1
+        sleep(randrange(5))
+
+    return None
