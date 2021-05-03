@@ -125,6 +125,7 @@ def video_upload(video_path, title, **kwargs):
     # -1 => видос будет грузиться целиком, быстрее на норм сети и при обрыве все равно будет докачка
     media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
 
+    # список полей см здесь https://developers.google.com/youtube/v3/docs/videos/insert
     meta = {
         'snippet': {
             'title' : title,
@@ -159,12 +160,13 @@ def resumable_upload(request, retries = 5):
     while retries > 0:
         try:
             status, response = request.next_chunk()
-            if response is None: raise Exception("empty response")
-            if 'id' in response: return response # success
+            if response is None: continue # next chunk, will be None until the resumable media is fully uploaded
+            if 'id' not in response: raise Exception("no id found while video uploading")
+
+            return response # success
         except Exception as e:
             print(e)
-
-        retries -= 1
-        sleep(randrange(5))
+            retries -= 1
+            sleep(randrange(5))
 
     return None
